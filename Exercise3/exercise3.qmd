@@ -1,0 +1,432 @@
+---
+title: "DWS 101 - Exercise 3"
+format:
+    html:
+        code-fold: true
+jupyter: python3
+---
+
+### Μεταφόρτωση Βιβλιοθηκών
+
+Let's start by importing our libraries:
+
+```{python}
+import numpy as np
+import matplotlib.pyplot as plt
+import yfinance as yf
+import pandas as pd
+# για το γράφημα
+import plotly.express as px
+# training
+# BayesianRidge για το Bayesian Linear Regression 
+from sklearn.linear_model import LinearRegression, BayesianRidge
+from sklearn.ensemble import RandomForestRegressor, BaggingRegressor, StackingRegressor
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.metrics import mean_absolute_error
+```
+
+And define our color visualization settings:
+
+```{python}
+px.defaults.template = "plotly_white"
+color_palette = ['#26C6DA', '#7a0e00', '#FF7043', '#2E78D2']
+px.defaults.color_discrete_sequence = color_palette
+```
+### Εισαγωγή Δεδομένων
+
+*Χρησιμοποιείστε τη βιβλιοθήκη yfinance στο colab, ώστε να κατεβάσετε δεδομένα tickers για τη τιμή του δολαρίου  τα τελευταία 5 έτη*
+
+```{python}
+ticker_symbol = "DX-Y.NYB"
+ticker = yf.Ticker(ticker_symbol)
+df_raw = ticker.history(period="5y").reset_index(drop=False)
+df_raw
+```
+*Τις στήλες Volume, Dividends, Stock Splits μπορείτε να τις αφαιρέσετε με την εντολή drop*
+
+```{python}
+df_raw.drop(labels=['Volume', 'Dividends', 'Stock Splits'], axis=1, inplace = True)
+
+# df_raw.head()
+print(df_raw.columns)
+
+```
+### Ερώτημα 1
+
+*Να δημιουργηθεί ένα μόνο line plot με άξονα y την τιμή κάθε στήλης (open, high, low, close) και  άξονα x την ημερομηνία. Μεγαλώστε το γράφημα ώστε να είναι πιο ευκρινές.*
+
+```{python}
+
+# Παίρνω τα ονόματα των στηλών που θέλω να δείξω
+columns_plot = df_raw.columns[1:]
+
+fig = px.line(
+    df_raw,
+    x='Date',
+    y=columns_plot,
+    title='Τιμές Δολαρίου 2020–2025',
+)
+
+fig.add_annotation(x=df_raw['Date'][300], y=100,
+    text="Ανοδική τάση", showarrow=True, arrowhead=5)
+
+fig.add_annotation(x=df_raw['Date'][520], y=113,
+    text="Υψηλή διακύμανση", showarrow=True,
+    arrowside="end", xanchor="left", ax=20, ay=10, arrowhead=5)
+
+fig.update_layout(
+    xaxis_title='Ημερομηνία',
+    yaxis_title='Τιμές',
+    width=780,
+    height=550,
+    legend_title_text=''
+)
+
+fig.show()
+
+```
+
+### Ερώτημα 2
+
+*Από το line plot του ερωτήματος (1), παρατηρείτε πως είναι στατικές ή μη στατικές οι χρονοσειρές;*
+
+Για να απαντήσουμε στο ερώτημα, παίρνουμε καταρχήν τον ορισμό μιας στατικής χρονοσειράς: «Αν η μέση τιμή, η διακύμανση και οι η αυτοσυσχέτισή της δεν
+εξαρτώνται από τη χρονική στιγμή t τότε η στοχαστική ανέλιξη ονομάζεται ασθενώς
+**στάσιμη**, ή στάσιμη κατά τη συνδιακύμανση». 
+
+Στην πράξη, αυτό σημαίνει πως μια χρονοσειρά που έχει α) σταθερή τάση και άρα μεταβαλλόμενη μέση τιμή ή β) αλλαγές στη μεταβλητότητά της (και στη διακύμανση ως μέτρο αυτής) και γ) εποχικότητα (άρα αυτοσυσχέτιση εξαρτώμενη από t) να θεωρείται **μη στάσιμη**.
+
+Εξετάζουμε:
+
+- Μέση τιμή: Οι τιμές του δολαρίου αυτή την πενταετία κινούνται γύρω από μια μέση τιμή περίπου 102\$. Όταν όμως όταν ανάγουμε στα επιμέρους διαστήματα του χρόνου, η μέση τιμή δεν είναι σταθερή, αλλά εξαρτάται από τη χρονική στιγμή t: το 2021 ήταν γύρω στα 93–95\$, ενώ το 2023 περίπου 105\$. Άρα η μέση τιμή δεν παραμένει σταθερή (μη στάσιμο χαρακτηριστικό).
+
+- Τάση: Συνιστά τη γενικότερη ροπή που έχουν τα δεδομένα της χρονοσειράς είτε προς αύξηση είτε προς μείωση. Εν προκειμένω, οι τιμές του δολαρίου δεν έχουν κάποια μακροχρόνια τάση, αφού αυξήθηκε π.χ. η τιμή του στις αρχές του 2023, αλλά στο τέλος του 2025 έχει φτάσει στα επίπεδα που είχε στις αρχές του 2022, δεν παρουσιάζει δηλαδή σταθερά αυξανόμενη ή μειούμενη τάση. Παρουσιάζει όμως τάσεις σε επιμέρους διαστήματα: π.χ. από τον Μάιο του 2021 έως τον Σεπ 2022, και μεταξύ Σεπ 2024 - Ιαν 2025 αυξητικές τάσεις (μη στάσιμο χαρακτηριστικό), ενώ μεταξυ Νοε 2023 - Αυγ 2024 σταθεροποιητικές τάσεις.
+
+- Μεταβλητότητα: Υπάρχουν έτη με μεγάλη μεταβλητότητα, όπως το 2022, που κυμάνθηκε μεταξύ 95.97\$-114.80\$, ενώ άλλα με μικρή, όπως το 2023 μεταξύ 99.60\$-107.40\$. Επίσης υπάρχουν διαστήματα με υψηλή διακύμανση (π.χ. Σεπ - Νοε 2022) και άλλα με χαμηλή (π.χ. το έτος 2023). Έχει δηλαδή μια τυχαία συνιστώσα (μη στάσιμο χαρακτηριστικό).
+
+- Εποχική διακύμανση: Δεν φαίνεται να έχει εποχικά χαρακτηριστικά, δηλαδή δεν διαπιστώνεται κάποιους μήνες τον χρόνο να έχει υψηλές τιμές σε σχέση με τον μέσο όρο του έτους (στάσιμο χαρακτηριστικό).
+
+- Κυκλικότητα (cyclicality): Παρατηρούμε ανεβοκατεβάσματα τιμών σε συγκεκριμένα χρονικά διαστήματα χωρίς σταθερή περιοδικότητα μεταξύ των εναλλαγών (στάσιμο χαρακτηριστικό).
+
+Οι χρονοσειρές επομένως είναι **μη στάσιμες** γιατί έχουν μεταβαλλόμενη τάση και μεταβλητότητα με το πέρασμα του χρόνου.
+
+
+### Ερώτημα 3
+
+*Έστω εκπαιδεύουμε έναν Regressor σε μη στατικές χρονοσειρές. Ποια θα ήταν τα πιθανά προβλήματα;*
+
+Ας ξεκινήσουμε από τον ορισμό: «Ως regressor ορίζουμε μια παλινδρομούσα μεταβλητή, και ως ανάλυση παλινδρόμησης την αποτύπωση της σχέσης μεταξύ δύο ή και παραπάνω μεταβλητών με σκοπό την πρόβλεψη των τιμών της μιας (Υ) μέσω των τιμών της άλλης (Χ)».
+
+- Εφόσον παρουσιάζει διαφορετική διακύμανση, τα σφάλματα μεταβάλλονται στον άξονα του χρόνου (δεν έχουμε ομοσκεδαστικότητα), και έτσι δεν μπορούμε να προβλέψουμε ακριβώς την τιμή της Υ από την τιμή της Χ, γιατί το σφάλμα μεταβάλλεται. Έτσι, θα πρέπει να εκτιμήσουμε ένα μεγάλο σφάλμα (για να καλύπτει όλες τις περιπτώσεις) και το μοντέλο μας θα έχει χαμηλή ακρίβεια προβλέψεων.
+
+- Εφόσον η τιμή της Υ επηρεάζεται από τάσεις (δηλαδή άγνωστους παράγοντες), η πρόβλεψη με δεδομένο το Χ (χρόνο) θα είναι λανθασμένη, καθώς δεν θα αποτελεί έναν καλό εκτιμητή για την τιμή του δολαρίου.
+
+- Μπορούμε ίσως να προσδιορίσουμε το εύρος διακύμανσης της τιμής του δολαρίου βασιζόμενοι σε αμέσως προηγούμενες τιμές, γιατί μέσα σε μια ημέρα μπορούν να γίνουν πεπερασμένες συναλλαγές, κι έτσι υπάρχει ένα όριο στο εύρος της δυνατής πτώσης ή ανόδου της τιμής του. Εξού και η πρόβλεψη του Υ συναρτήσει και των προηγούμενων τιμών του, που ζητείται παρακάτω στην άσκηση.
+
+### Ερώτημα 4
+
+*Τι παρατηρείτε για την τάση του δολαρίου μεταξύ Ιούνιο και Ιούλιο του 2025; Να αναζητήσετε και να αναφέρετε τις πιθανές αιτίες που να εξηγούν αυτήν τη τάση.*
+
+Παρατηρούμε πως είχαμε μια πτώση της τιμής του δολαρίου από 100.54\$ σε 96.38\$, μέσα σε διάστημα ενός μήνα (29.05-01.07).
+
+```{python}
+start_date = "2025-05-15"
+end_date = "2025-07-15"
+
+fig.update_xaxes(type="date", range=[start_date, end_date])
+fig.update_layout(
+    title="Διακύμανση τιμής δολαρίου, 29.05-01.07.2025"
+)
+fig.update_yaxes(range=[96, 101])
+
+```
+
+Αυτή η πτωτική τάση ενδεχομένως να εξηγείται από την αβεβαιότητα με την οποία αντιμετώπισαν οι αγορές την απόφαση του Διεθνούς Δικαστηρίου Εμπορίου των ΗΠΑ στις 28.05.2025, με την οποία αποφάνθηκαν πως η σχεδιαζόμενη επιβολή δασμών (tariffs) της αμερικανικής κυβέρνησης σε εισαγωγές από άλλες χώρες στερούνταν νομιμότητας. Οι ανησυχίες πως η σχετική οικονομική πολιτική των ΗΠΑ οδηγεί σε αστάθεια, οδήγησαν στην πώληση αποθεμάτων σε δολάρια, με αποτέλεσμα την πτώση της τιμής του δολαρίου στις αγορές.
+
+### Ερώτημα 5
+
+*Είναι δυνατόν να προβλέψουμε την τιμή (close) του δολαρίου για την επόμενη μέρα, αν έχουμε ως πληροφορία τα σημερινά open, high, low, close; Εναλλακτικά, είναι δυνατή η εύρεση συνάρτησης fot,ht,lt,ct=ct+1; Αιτιολογείστε.*
+
+Μπορούμε ίσως να προσδιορίσουμε το εύρος διακύμανσης της τιμής του δολαρίου της επόμενης ημέρας (ct+1) βασιζόμενοι σε αμέσως προηγούμενες τιμές (ht,lt,ct), γιατί μέσα σε μια ημέρα μπορούν να γίνουν πεπερασμένες συναλλαγές, κι έτσι υπάρχει ένα όριο στο εύρος της δυνατής πτώσης ή ανόδου της τιμής του.
+
+### Ερώτημα 6
+
+*Έχει νόημα να γίνει τυχαίος διαχωρισμός των δεδομένων σε train-test;*
+
+Ο διαχωρισμός ανάμεσα σε δεδομένα train και test έχει ως στόχο να ελέγξω την απόδοση του μοντέλου σε δεδομένα τα οποία δεν έχει δει (test). Παραδείγματος χάριν, εάν εκπαιδεύσω το μοντέλο σε ένα διάστημα μόνο με αυξητικές τάσεις, τότε όταν δει νέα δεδομένα (test) θα προβλέπει αύξηση της τιμής t+1 σε σχέση με την τιμή t. Θα έχει ενσωματώσει δηλαδή στον αλγόριθμό του τα γεγονόντα που οδήγησαν σε μια απόκριση (τάση), και βάση αυτού θα προβλέπει νέες τιμές.
+
+Εάν όμως αναφερόμαστε στον **τυχαίο** διαχωρισμό, κατά μια έννοια, κάθε νέα μέρα είναι unseen data για το μοντέλο, καθώς η τιμή του δολαρίου εξαρτάται από απρόβλεπτους παράγοντες (π.χ. πολιτικά γεγονόντα) που δεν μπορούμε να μοντελοποιήσουμε. Εφόσον το μόνο που μπορούμε να μοντελοποιήσουμε είναι η σχέση της επόμενης ημέρας με την προηγούμενη (ή τις αμέσως προηγούμενες), κάνοντας τυχαίο διαχωρισμό, θα απωλέσω αυτό το στοιχείο πρόβλεψης, που είναι και το σημαντικότερο στο μοντέλο μου. Άρα θα ήταν λάθος.
+
+### Ερώτημα 7
+
+*Χωρίστε το σύνολο δεδομένων σε train-test dataframes όπου train όλα τα δεδομένα πριν το 2024 και test όλα τα δεδομένα του 2024. Στη συνέχεια, αφαιρέστε τη στήλη Date από κάθε DataFrame.*
+
+```{python}
+
+
+df_train = df_raw[pd.to_datetime(df_raw['Date']).dt.year<2024]
+df_test = df_raw[pd.to_datetime(df_raw['Date']).dt.year==2024]
+
+# df_train.info()
+
+df_train = df_train.drop(labels='Date',axis=1).reset_index(drop=True)
+df_test = df_test.drop(labels='Date',axis=1).reset_index(drop=True)
+
+df_train.head()
+
+```
+
+### Ερώτημα 8
+
+*Δημιουργήστε συνάρτηση που θα παίρνει ως όρισμα ένα dataframe (είτε του train είτε του test), καθώς και μια παράμετρο N και θα επιστρέφει 2 numpy arrays: Inputs (x) και Targets (y), όπου x τα timeframes και y η τιμή close της επόμενης ημέρας. Τα timeframe είναι ένα σύνολο N διαδοχικών γραμμών. Για παράδειγμα αν N=3, τότε τα timeframes θα ήταν πίνακες 3x4, όπου 3 οι γραμμές και 4 τα χαρακτηριστικά open, high, low, close. Για N μέγεθος, το 1ο Timeframe θα περιλαμβάνει τις γραμμές x0: [0, N-1], το 2ο τις x1: [1, N], το 3ο x2: 2,N+1, κλπ. Για τα targets, το y0 θα ήταν το αντίστοιχο cN το y1 το CN+1, κλπ. Για τα Targets μπορείτε να χρησιμοποιήσετε την εντολή shift της pandas.*
+
+```{python}
+def df_to_arrays(df, n):
+    print(f"Timeframe has {n} rows")
+    print(f"Input is the close value of row no.{n+1} that follows")
+    if df.shape[0] <= n+1:
+        print("Not enough rows to generate input-target pairs")
+        return
+    # X is capitalized to signify a matrix
+    X = []
+    # y small caps as it's a single value
+    y = []
+    for i in range(0, df.shape[0]-1-n):
+        try:
+            inputs_x = np.array(df.loc[i:i+n-1])
+            targets_y = np.array(df.loc[i+n]['Close'])
+            X.append(inputs_x)
+            y.append(targets_y)
+        except IndexError:
+            print(f"IndexError at i={i}: more rows needed")
+        except KeyError:
+            print(f"KeyError at i={i}: check dataframe index or column names")
+    return np.array(X), np.array(y)
+
+
+# df_to_arrays(df_test, 5)
+```
+
+### Ερώτημα 9
+
+*Αν θέλουμε να προβλέψουμε την επόμενη ημέρα, το μέγεθος του timeframe N πρέπει να είναι μικρό ή μεγάλο; Τι προτείνετε για το μέγεθος του Ν αν θέλουμε να προβλέψουμε πιο μακρινό ορίζοντα (πχ ένα μήνα); Αιτιολογείστε.*
+
+Από τη θεωρία ξέρουμε πως τα μοντέλα μηχανικής μάθησης προσπαθούν να βρουν μοτίβα εντός του timeframe που ορίζουμε. Για αυτά τα μοτίβα λαμβάνουν υπόψιν τόσο την μεταβλητή - στόχο, όσο και την  συνδιασπορά της με τις ανεξάρτητες μεταβλητές (features). 
+
+Εφόσον η τιμή πώλησης του δολαρίου εξαρτάται από παράγοντες που δεν περιέχονται στο μοντέλο μας (π.χ. πολιτικές εξελίξεις), η συμπεριφορά του δείκτη μέσα σε μια ημέρα θα αποτυπώνει αυτά τα χαρακτηριστικά, για εκείνη την περίοδο: π.χ. μεγάλη νευρικότητα στο πολιτικό κλίμα μπορεί να οδηγεί σε μεγάλα highs και lows στις ημέρες που διαρκεί αυτή η κρίση. Οπότε η πρόβλεψη για μια επόμενη ημέρα θα είναι πιο έγκυρη εάν λάβει υπόψιν αυτά τα μικρο-οικονομικά στοιχεία, χωρίς την εξομάλυνση που ενδεχομένως θα πρόσδιδαν δεδομένα από μεγαλύτερο πρότερο διάστημα.
+
+Αντίθετα, για μια πρόβλεψη με πιο μακρινό ορίζοντα, πρέπει να λάβουμε υπόψιν πιο μακρο-οικονομικά στοιχεία. Αυτά θα έχουν αποτυπωθεί στα μοτίβα μεγαλύτερων timeframe κοιτώντας προς το παρελθόν, και έτσι θα έχει λογική να τα λάβουμε υπόψιν.
+
+### Ερώτημα 10
+
+*Δημιουργήστε τα x_train, y_train, x_test, y_test ορίζοντας ως N το 5. Καθώς τα μοντέλα μηχανικής μάθησης που θα χρησιμοποιήσουμε δέχονται διανύσματα στις εισόδους τους, μετατρέψτε τους πίνακες των inputs σε διανύσματα μεγέθους Nx4, δηλαδή 20. Μπορείτε να χρησιμοποιήσετε την εντολή reshape της numpy https://numpy.org/doc/stable/reference/generated/numpy.reshape.html Ελέγξτε ότι το πλήθος των input είναι ίδιο με το πλήθος των target. Ελέγξε ότι το preprocessing έγινε σωστά, τυπώνοντας το 1ο input του x_train.*
+
+```{python}
+X_train, y_train = df_to_arrays(df_train, 5)
+X_test, y_test = df_to_arrays(df_test, 5)
+
+# print(x_train.shape, y_train.shape, x_test.shape, y_test.shape)
+
+# γιατί timeframe inputs must be converted to vectors
+X_train = X_train.reshape(X_train.shape[0], -1)
+X_test  = X_test.reshape(X_test.shape[0], -1)
+
+# Ελέγξτε ότι το πλήθος των input είναι ίδιο με το πλήθος των target
+print(f"{X_train.shape[0]} is equal to {y_train.shape[0]}")
+
+# Ελέγξε ότι το preprocessing έγινε σωστά, τυπώνοντας το 1ο input του x_train
+print(X_train.shape, y_train.shape, X_test.shape, y_test.shape)
+print("First input sample:", X_train[0])
+
+```
+
+### Ερώτημα 11
+
+Εκπαιδεύστε τα παρακάτω μοντέλα στο train και υπολογίστε το MAE στα train και test:
+
+- Linear Regressor
+- Random Forest Regressor
+- Bagging χρησιμοποιώντας ως estimator: Linear Regression
+- Blr
+- Stacking χρησιμοποιώντας ως estimators: Linear Regression + Decision Tree Regression
+
+Linear Regressor
+
+```{python}
+# create the model
+linear_model = LinearRegression()
+# train it
+linear_model.fit(X_train, y_train)
+
+# get the predictions
+y_pred_linear_train = linear_model.predict(X_train)
+y_pred_linear_test = linear_model.predict(X_test)
+# calculate MAE
+mae_linear_train = mean_absolute_error(y_train, y_pred_linear_train)
+mae_linear_test = mean_absolute_error(y_test, y_pred_linear_test)
+```
+
+Random Forest Regressor
+
+```{python}
+# create the model
+rf_model = RandomForestRegressor(n_estimators=100, random_state=0)
+# train it
+rf_model.fit(X_train, y_train)
+# get the predictions
+y_pred_rf_train = rf_model.predict(X_train)
+y_pred_rf_test = rf_model.predict(X_test)
+# calculate MAE
+mae_rf_train = mean_absolute_error(y_train, y_pred_rf_train)
+mae_rf_test = mean_absolute_error(y_test, y_pred_rf_test)
+```
+
+Bagging χρησιμοποιώντας ως estimator: Linear Regression
+
+```{python}
+# create the model
+bagging_model = BaggingRegressor(estimator=LinearRegression(),n_estimators=10, random_state=0)
+# train it
+bagging_model.fit(X_train, y_train)
+# get the predictions
+y_pred_bagging_train = bagging_model.predict(X_train)
+y_pred_bagging_test = bagging_model.predict(X_test)
+# calculate MAE
+mae_bagging_train = mean_absolute_error(y_train, y_pred_bagging_train)
+mae_bagging_test = mean_absolute_error(y_test, y_pred_bagging_test)
+```
+
+Bayesian Linear Regression
+
+```{python}
+# create the model
+blr_model = BayesianRidge()
+# train it
+blr_model.fit(X_train, y_train)
+# get the predictions
+y_pred_blr_train = blr_model.predict(X_train)
+y_pred_blr_test = blr_model.predict(X_test)
+# calculate MAE
+mae_blr_train = mean_absolute_error(y_train, y_pred_blr_train)
+mae_blr_test = mean_absolute_error(y_test, y_pred_blr_test)
+```
+
+Stacking χρησιμοποιώντας ως estimators: Linear Regression + Decision Tree Regression
+
+```{python}
+# create the base models that will form the first layer of our stacking model
+estimators = [
+    ('linear_regression', LinearRegression()),
+    ('dt_regressor', DecisionTreeRegressor(random_state=0))
+]
+
+# second layer will be Linear Regression
+stacking_reg_model = StackingRegressor(
+    estimators=estimators,
+    final_estimator=LinearRegression()
+)
+
+# train it
+stacking_reg_model.fit(X_train, y_train)
+
+# get the predictions
+y_pred_stacking_train = stacking_reg_model.predict(X_train)
+y_pred_stacking_test = stacking_reg_model.predict(X_test)
+# calculate MAE
+mae_stacking_train = mean_absolute_error(y_train, y_pred_stacking_train)
+mae_stacking_test = mean_absolute_error(y_test, y_pred_stacking_test)
+```
+
+*Στη συνέχεια, να κατασκευαστεί ένα μόνο bar-plot για το MAE των a,b,c,d,e στα train και test (μπορείτε να ορίσετε ως μπλε το train και ως πράσινο το test). Μπορείτε να ορίσετε τους Regressors a,b,c,d,e στον οριζόντιο άξονα και τα αντίστοιχα MAE τους στον κάθετο άξονα.*
+
+```{python}
+# φτιάχνω ένα dataframe για τα MAE
+df_mae = pd.DataFrame({
+    'Model': ['Linear Regression', 'Random Forest', 'Bagging (LR)', 'Bayesian LR', 'Stacking'],
+    'Train MAE': [mae_linear_train, mae_rf_train, mae_bagging_train, mae_blr_train, mae_stacking_train],
+    'Test MAE': [mae_linear_test, mae_rf_test, mae_bagging_test, mae_blr_test, mae_stacking_test]
+})
+
+df_mae
+```
+
+```{python}
+df_mae_sorted = df_mae.sort_values(by='Test MAE', ascending=True)
+
+# plot
+fig = px.bar(
+    df_mae_sorted,
+    x=["Train MAE", "Test MAE"],
+    y="Model",
+    orientation='h',
+    barmode='group',
+    title="Train vs Test Mean Absolute Error - Model Comparison",
+    labels={"value": "MAE", "variable": ""},
+    width=700,
+    height=400
+)
+
+fig.update_layout(
+    xaxis_tickangle=0,
+    legend=dict(
+        x=-0.2,
+        y=-0.2,
+        xanchor='left',
+        yanchor='top'
+    )
+)
+
+fig.show()
+
+```
+
+### Σχόλια
+
+#### Test data
+
+Παρατηρούμε τα εξής:
+
+- Τα τέσσερα από τα πέντε μοντέλα (Stacking, Bayesian Linear Model, Linear Regression και Bagging) παρουσιάζουν το μικρότερο Μέσο Απόλυτο Σφάλμα στα δεδομένα test (καφέ χρώμα), με MAE που κινείται μεταξύ 0.283 και 0.288 (Stacking). Αντίθετα, το μοντέλο που εκπαιδεύτηκε στον regresson Random Forest, παρουσιάζει μεγαλύτερο σφάλμα ίσο με 0.319. Αυτό αποκτά ιδιαίτερο ενδιαφέρον, καθώς το Random Forest έχει το μικρότερο Μέσο Απόλυτο Σφάλμα στα δεδομένα εκπαίδευσης με 0.147, άρα φαίνεται πως κάνει υπερπροσαρμογή (overfitting). Αυτό ίσως να υποδηλώνει πως η σχέση μεταξύ χαρακτηριστικών και στόχου είναι γραμμική, ενώ το Random Forest την ερμηνεύει με μη-γραμμικό τρόπο, μαθαίνοντας διακυμάνσεις στην εκπαίδευση που δεν εμφανίζονται στο test.
+
+- Επίσης ενδιαφέρον έχει πως τα λοιπά μοντέλα (πλην του Random Forest) έχουν καλύτερη επίδοση στο test set από τα δεδομένα εκπαίδευσης! Ένας λόγος μπορεί να είναι οι μεγάλες διακυμάνσεις της τιμής του δολαρίου που σημειώσαμε στο γράφημα το φθινόπωρο το 2022, που δυσκολεύουν την πρόβλεψη στο training dataset εκείνη την περίοδο.
+
+
+*Τέλος, να εξηγήσετε συνοπτικά (1-2 γραμμές) το πως δουλεύει κάθε μοντέλο (Regressor).*
+
+Τα μοντέλα κάνουν πρόβλεψη συνεχών αριθμητικών τιμών, εν προκειμένω πρόβλεψη της ισοτιμίας του δολαρίου. Οι παράγοντες που επηρεάζουν την τιμή είναι άγνωστοι στην πλειοψηφία τους (π.χ. πολιτικές εξελίξεις), και τα μοντέλα μας βασίζονται στις τιμές που προηγήθηκαν, με εύρος (timeframe) 5 ημερών. Τα δεδομένα που χρησιμοποιούμε είναι στατικά, δηλαδή αφορούν παρελθοντικές τιμές και δεν αλλάζουν.
+
+Εφαρμόσαμε 5 μεθόδους γραμμικής παλινδρόμησης σε χρονοσειρές, κατά τις οποίες χρησιμοποιήσαμε supervised learning με χαρακτηριστικά (features) τις τιμές ανοίγματος, κλεισίματος και την μέγιστη και ελάχιστη τιμή των προηγούμενων 5 ημερών, ενώ ως μεταβλητή-στόχος (target) ήταν η τιμή κλεισίματος της ημέρας που ακολουθεί.
+
+Στην πράξη, αφαιρέσαμε το χαρακτηριστικό της ημερομηνίας, οπότε κάναμε «απαλοιφή» της έννοιας του χρόνου με κυλιόμενο παράθυρο, δηλαδή μετατροπή της χρονοσειράς σε στατικό σύνολο δεδομένων με χαρακτηριστικά.
+
+- Γραμμική Παλινδρόμηση
+
+```{python}
+# παράμετροι - coefficients
+print("Coefficients:", linear_model.coef_)
+
+# σταθερός όρος
+print("Intercept:", linear_model.intercept_)
+
+```
+
+Βλέπω πως έχω 20 χαρακτηριστικά, που προκύπουν από τις 4 στήλες x 5 ημέρες που είναι το timeframe, και έναν σταθερό όρο, εφαρμόζοντας τη µέϑοδο των ελαχίστων τετϱαγώνων. Οι σχέσεις είναι γραμμικές, προσδιορίζουν δηλαδή μια ευθεία γραμμή που περνάει από τα σημεία που μειώνουν στο ελάχιστο δυνατό την διαφορά μεταξύ πραγματικής τιμής και προβλεπόμενης (τα residuals).
+
+- Bagging χρησιμοποιώντας ως estimator: Linear Regression
+
+Εφαρμόζουμε έναν συνδυασμό μοντέλων γραμμικής παλινδρόμησης σε 10 διαφορετικά υποσύνολα δεδομένων. Η επιλογή των δεδομένων γίνεται με εναπόθεση, δηλαδή αφού επιλέξω τυχαία ένα δεδομένο, το επιστρέφω στο σύνολο, και μπορεί να επιλεγεί εκ νέου (άρα να το έχω πολλαπλές φορές στο δείγμα μου). Η τελική εκτίμηση για την μεταβλητή-στόχο είναι ο μέσος όρος των 10 επιμέρους εκτιμήσεων των μοντέλων.
+
+- Bayesian Linear Regression
+
+Σε αυτό το μοντέλο, εφαρμόζουμε Μπεϋζιανή γραμμική παλινδρόμηση, η οποία συνίσταται στο εξής: κατασκευάζουμε ένα μοντέλο γραμμικής παλινδρόμησης, όπου οι συντελεστές των χαρακτηριστικών (features) δεν είναι σταθεροί (όπως στην απλή γραμμική παλινδρόμηση παραπάνω) αλλά εκτιμώνται με ένα εύρος κατανομής. Υιοθετούμε αρχικά τιμές για τις παραμέτρους, τις οποίες στη συνέχεια ενημερώνουμε βάση των τιμών που λαμβάνουμε από την μεταβλητή στόχο (target).
+
+```{python}
+print(blr_model.coef_)
+```
+
+Συγκρίνοντας τους συντελεστές με αυτούς της απλής γραμμικής παρεμβολής, παρατηρώ πως είναι στην πλειοψηφία τους μικρότεροι. Αυτό μειώνει την επιρροή τους, και την αντίστοιχη υπερπροσαρμογή του μοντέλου στα δεδομένα εκπαίδευσης.
+
+- Stacking χρησιμοποιώντας ως estimators: Linear Regression + Decision Tree Regression
+
+Τέλος, στη συσσώρευση ή στοίβαξη (Stacking), χρησιμοποιώ προβλέψεις από 2 μοντέλα: ένα γραμμικής παλινδρόμησης και ένα Δένδρο Απόφασης, τα οποία συνδυάζονται σε ένα μετα-μοντέλο για να παραχθεί η τελική πρόβλεψη. Εδώ χρησιμοποιούμε και ένα επιπλέον set - το stacking dataset - για να καταλάβουμε ποιό από τα δυό μοντέλα δίνει καλύτερη πρόβλεψη, και να προσαρμόσουμε την βαρύτητά τους αντιστοίχως.
+Παρατηρούμε πως στην περίπτωσή μας η απόδοσή του είναι ελαφρώς χειρότερη στο test set σε σχέση με την απλή γραμμική παλινδρόμησης, που λογικά οφείλεται στην απόδοση του Δένδρου Απόφασης, που όμοια με το Random Forest, οδηγεί σε υπερπροσαρμογή.
