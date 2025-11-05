@@ -3,6 +3,9 @@ title: "DWS 101 - Exercise 3"
 format:
     html:
         code-fold: false
+    ipynb: default
+execute:
+    echo: true
 jupyter: python3
 ---
 
