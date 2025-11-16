@@ -1,0 +1,621 @@
+---
+title: "DWS 101 - Exercise 4 - Part B"
+format:
+    html:
+        code-fold: false
+    ipynb: default
+execute:
+    echo: true
+jupyter: python3
+---
+
+### Μεταφόρτωση Βιβλιοθηκών
+
+Let's start by importing our libraries:
+
+```{python}
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+# για το γράφημα
+import plotly.express as px
+import plotly.graph_objects as go
+# train and test
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.tree import DecisionTreeRegressor, plot_tree
+from sklearn.metrics import mean_absolute_error, make_scorer
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import confusion_matrix
+
+```
+
+And define our color visualization settings:
+
+```{python}
+px.defaults.template = "plotly_white"
+color_palette = ['#26C6DA', '#7a0e00', '#FF7043', '#2E78D2']
+```
+### Ερώτημα 1
+
+*Φορτώστε το σύνολο δεδομένων wine-full.csv. Θεωρείτε πως το σκορ (quality) είναι ισορροπημένο (balanced); Αιτιολογήστε, συμπεριλαμβάνοντας και το αντίστοιχο plot.*
+
+```{python}
+df_raw = pd.read_csv("data/wine-full.csv")
+df_raw.head()
+```
+```{python}
+df_raw.describe()
+```
+
+```{python}
+df_raw.info()
+```
+Επομένως τα types των επιμέρους στηλών είναι σωστά.
+
+Από τα παραπάνω βλέπω πως η μεταβλητή quality είναι διακριτή, δηλαδή το πεδίο τιμών της είναι πεπερασμένο και μπορεί να πάρει μόνο συγκεκριμένες τιμές ακεραίων μεταξύ 3 και 9.
+
+```{python}
+quality_value_counts = df_raw['quality'].value_counts().sort_index()
+
+fig = px.bar(
+    quality_value_counts,
+    color_discrete_sequence=[color_palette[0]],
+    title="Quality variable distribution"
+    )
+
+fig.update_layout(
+    autosize=False,
+    width=500,
+    height=400
+)
+
+fig.update_xaxes(
+    tickmode='linear'
+)
+
+fig.show()
+print(quality_value_counts)
+```
+
+Αναφερόμενοι σε ισορροπημένη κατανομή, εννοούμε εάν οι τιμές της διακριτής μεταβλητής εμφανίζονται με παρόμοια συχνότητα στο δείγμα μας.
+
+Το πρώτο συμπέρασμα από το γράφημα είναι πως:
+
+α) η μεταβλητή δεν είναι ισορροπημένη, με την έννοια πως δεν παρουσιάζει την ίδια συχνότητα εμφάνισης για τις διακριτές τιμές της. Η τιμή 6 έχει την μεγαλύτερη συχνότητα εμφάνισης με n = 2836, ενώ η τιμή 9 τη μικρότερη, με n=5.
+
+β) δεν έχει κανονική κατανομή, αλλά παρουσιάζει ελαφριά δεξιά λοξότητα.
+
+
+### Ερώτημα 2
+
+*Συχνά δημιουργείται η ερώτηση: Το κόκκινο η το λευκό κρασί είναι ποιοτικά καλύτερο; Εφαρμόστε κατάλληλη μεθοδολογία και plots, ώστε να αιτιολογήσετε την απάντηση σας.*
+
+Από το documentation της μεθόδου `value_counts` βλέπω πως έχω την επιλογή να θέσω την παράμετρο `normalize=True`, για να πάρω τις σχετικές συχνότητες των τιμών της quality για τα δύο types (red και white).
+
+Οπότε, γιαα να απαντήσω στην ερώτηση, θα κάνω τα εξής:
+- Group by κατά type και υπολογισμός του value counts για την στήλη quality
+- Γράφημα συχνότητας για τις τιμές της στήλης quality, διαχωρισμένες με βάση τις δύο τιμές της στήλης 'type', δηλαδή 'red' και 'white'.
+
+```{python}
+freq_data = (
+    df_raw.groupby('type')['quality']
+    .value_counts(normalize=True)
+    .reset_index(name='Relative Frequency')
+)
+
+fig = px.bar(
+    freq_data,
+    x="quality",
+    y="Relative Frequency",
+    color="type",
+    color_discrete_sequence=color_palette,
+    title="Quality variable distribution per type of wine",
+    barmode="group"
+)
+
+fig.update_layout(
+    autosize=False,
+    width=500,
+    height=400
+)
+
+fig.update_xaxes(
+    tickmode='linear'
+)
+
+fig.show()
+```
+
+### Ερώτημα 3
+
+*Το γλυκό κρασί έχει μεγαλύτερη ποιότητα από ότι το ξηρό; Αιτιολογήστε την απάντηση σας, λαμβάνοντας υπόψη την ποσότητα υπολειπόμενων σακχάρων.*
+
+Από την βιβλιογραφία βρίσκω πως  οι οίνοι χωρίζονται σε τέσσερις κατηγορίες με βάση την περιεκτικότητά τους σε σάκχαρα, με βάση τους κανονισμούς της Ε.Ε.:
+
+- Ξηρά: περιεκτικότητα σε σάκχαρα έως 4 γρ. ανά λίτρο.
+- Ημίξηρα: περιεκτικότητα σε σάκχαρα από 4 μέχρι 12 γρ. ανά λίτρο.
+- Ημίγλυκα: περιεκτικότητα σε σάκχαρα 12 μέχρι 45 γρ. ανά λίτρο.
+- Γλυκά: περιεκτικότητα σε σάκχαρα πάνω από 45 γρ.ανά λίτρο.
+
+Οπότε θα δημιουργήσω μια νέα στήλη `sweetness` στον πίνακά μου, με την κατηγοριοποίηση κάθε data point βάση των παραπάνω:
+
+```{python}
+# χρησιμοποιώ το max() για να πάρω την μέγιστη τιμή
+bins = [0, 4, 12, 45, df_raw['residual sugar'].max()]
+labels = ['Dry', 'Semi-dry', 'Semi-sweet', 'Sweet']
+
+df_raw['sweetness'] = pd.cut(
+    df_raw['residual sugar'],
+    bins=bins,
+    labels=labels,
+    include_lowest=True
+)
+
+quality_value_counts = df_raw['sweetness'].value_counts().sort_index()
+print(quality_value_counts)
+```
+
+Παρατηρώ όμως πως έχω ένα μόνο γλυκό κρασί στο dataset:
+
+```{python}
+df_raw[df_raw['residual sugar'] > 45]
+```
+
+Οπότε δεν μπορώ να αποφανθώ βάση του συγκεκριμένου δείγματος για το αν το γλυκό κρασί έχει μεγαλύτερη ποιότητα από ότι το ξηρό, διότι δεν επαρκούν οι μετρήσεις για να βγάλω συμπεράσματα για τον πληθυσμό, βάση της στατιστικής συμπερασματολογίας.
+
+Κάνω παρόλα αυτά ένα plot:
+
+```{python}
+freq_data = (
+    df_raw.groupby('sweetness')['quality']
+    .value_counts(normalize=True)
+    .reset_index(name='Relative Frequency')
+)
+
+fig = px.bar(
+    freq_data,
+    x="quality",
+    y="Relative Frequency",
+    color="sweetness",
+    color_discrete_sequence=color_palette,
+    title="Quality variable distribution per sweetness of wine",
+    barmode="group"
+)
+
+fig.update_layout(
+    autosize=False,
+    width=500,
+    height=400
+)
+
+# για να φαίνονται όλες οι τιμές
+fig.update_xaxes(
+    tickmode='linear'
+)
+
+fig.show()
+```
+
+### Ερώτημα 4
+
+*Δημιουργήστε numpy arrays x, y όπου τα inputs είναι όλες οι μεταβλητές εκτός του quality, ενώ y οι μεταβλητή quality. Χωρίστε το σύνολο δεδομένων σε train-test με ποσοστά 90-10 αντίστοιχα. Χρησιμοποιείστε random_state=0.*
+
+Δεν θα κρατήσω τη στήλη `sweetness` στους υπολογισμούς μου, γιατί είναι ουσιαστικά απόλυτα συσχετισμένη με τη στήλη `residual sugar` και θα έχω πολυσυγγραμικότητα.
+
+Επιπλέον, τα δένδρα απόφασης δεν μπορούν να λειτουργήσουν με κατηγορικές μεταβλητές, επομένως θα μετατρέψω τον τύπο του κρασιού με one-hot encoding:
+
+```{python}
+df_raw = pd.get_dummies(df_raw, columns=['type'], drop_first=True)
+
+df_raw.head()
+```
+
+```{python}
+# αφαιρώ τις δύο στήλες
+# χρησιμοποιώ to_numpy() για να τα κάνω arrays
+X = df_raw.drop(columns=['quality', 'sweetness']).to_numpy()
+
+y = df_raw['quality'].to_numpy()
+
+# χωρίζω σε train και test
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.10, random_state=0
+)
+
+X_train.shape, X_test.shape, y_train.shape, y_test.shape
+```
+Επομένως έχω 12 χαρακτηριστικά και μια μεταβλητή - στόχο.
+
+### Ερώτημα 5
+
+*Εκπαιδεύστε DecisionTreeRegressor (random_state=0) στο training set και υπολογίστε το σφάλμα με τη μετρική MAE στο test set.*
+
+```{python}
+model = DecisionTreeRegressor(random_state=0)
+model.fit(X_train, y_train)
+
+# οι προβλεπόμενες τιμές
+y_pred = model.predict(X_test)
+
+# το μέσο απόλυτο σφάλμα
+mae = mean_absolute_error(y_test, y_pred)
+print(f"Το μέσο απόλυτο σφάλμα στο test set είναι {mae:.4f}")
+```
+Στην πράξη αυτό το αποτέλεσμα σημαίνει πως «Κατά την πρόβλεψη της ποιότητας του κρασιού, το μοντέλο έχει μια απόκλιση 0.46 μονάδων. Άρα εάν παραδείγματος χάριν ένα κρασί έχει βαθμολογία 6, η πρόβλεψη θα είναι συνήθως μεταξύ 5.5 και 6.5».
+
+### Ερώτημα 6
+
+*Θέλουμε να υπολογίσουμε αν το μοντέλο του ερωτήματος 4 είναι αξιόπιστο. Επαναλάβετε τη διαδικασία 3-4, χρησιμοποιώντας 10 διαφορετικά seed (0-9). Στη συνέχεια, υπολογίσετε το μέσο όρο και την τυπική απόκλιση για τη μετρική MAE. Πως μπορούμε να αξιοποιήσουμε αυτές τις τιμές ώστε να είμαστε πιο βέβαιοι για το αναμενόμενο σφάλμα του μοντέλου;*
+
+Η τυπική απόκλιση είναι η ρίζα της διακύμανσης και ίση με `SD = sqrt(Var(X)) = sqrt(E[(X−μX)2])`
+
+Για να απαντήσω στο ερώτημα, θα τρέξω ένα for loop:
+
+```{python}
+# για την αποθήκευση των αποτελεσμάτων
+mae_results = []
+
+for seed in range(10):
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.10, random_state=seed
+    )
+
+    model = DecisionTreeRegressor(random_state=seed)
+    model.fit(X_train, y_train)
+
+    y_pred = model.predict(X_test)
+    mae = mean_absolute_error(y_test, y_pred)
+    mae_results.append(mae)
+
+mae_mean = np.mean(mae_results)
+mae_SD = np.std(mae_results)
+
+print(f"Μέσο Απόλυτο Σφάλμα για τα seeds 0–9: {mae_results}")
+print(f"Μέσος Όρος του Μέσου Απόλυτου Σφάλματος: {round(mae_mean, 2)}")
+print(f"Η τυπική απόκλιση του Μέσου Απόλυτου Σφάλματος: {round(mae_SD, 2)}")
+
+```
+
+Σύμφωνα με τα αποτελέσματα, το Δέντρο Αποφάσεων προβλέπει κατά μέσο όρο την ποιότητα του κρασιού με απόκλιση [-0.47, +0.47] από την πραγματική τιμή του βαθμού ποιότητας.
+Η χαμηλή τυπική απόκλιση για τα διαφορετικά seeds καταδεικνύει πως το μοντέλο είναι σταθερό και η απόδοσή του δεν αλλάζει πολύ, άρα είναι αξιόπιστο.
+
+### Ερώτημα 7
+
+*Χωρίστε το σύνολο train set σε train-validation με ποσοστά 80-20% αντίστοιχα, χρησιμοποιώντας (random_state=0). Θα πρέπει να έχετε 3 σύνολα δεδομένων (train-validation-test) με ποσοστά 70-20-10 του συνολικού dataset. Θέλουμε να κάνουμε fine-tuning (εύρεση υπερπαραμέτρων) ώστε να βελτιωθεί η ακρίβεια του δέντρου (ερώτημα 3). Δοκιμάστε 15 διαφορετικούς συνδυασμούς με παραμέτρους της επιλογής σας, διατηρώντας πάντα το random_state=0 και υπολογίστε το MAE στο training και στο validation set για κάθε συνδυασμό.*
+
+Θα χρησιμοποιήσω τα X και y που έχω ήδη υπολογίσει παραπάνω:
+
+```{python}
+# Παίρνω αρχικά το train set
+X_train, X_temporary, y_train, y_temporary = train_test_split(
+    X, y, test_size=0.30, random_state=0
+)
+
+# Και τώρα θα χωρίσω το λοιπό 30% σε 2/3 (validation) και 1/3 (test)
+X_val, X_test, y_val, y_test = train_test_split(
+    X_temporary, y_temporary, test_size=0.333, random_state=0
+)
+```
+Θα δοκιμάσω τους παρακάτω συνδυασμούς, σε μια λίστα με keys and values για να περάσω αυτούσια στον ταξινομητή:
+
+```{python}
+parameter_combinations = [
+    {'max_depth': 3, 'min_samples_split': 2, 'min_samples_leaf': 1},
+    {'max_depth': 5, 'min_samples_split': 2, 'min_samples_leaf': 1},
+    {'max_depth': 10, 'min_samples_split': 2, 'min_samples_leaf': 1},
+    {'max_depth': 15, 'min_samples_split': 2, 'min_samples_leaf': 1},
+    {'max_depth': 8, 'min_samples_split': 2, 'min_samples_leaf': 1},
+    {'max_depth': 5, 'min_samples_split': 5, 'min_samples_leaf': 1},
+    {'max_depth': 5, 'min_samples_split': 10, 'min_samples_leaf': 1},
+    {'max_depth': 5, 'min_samples_split': 20, 'min_samples_leaf': 1},
+    {'max_depth': 10, 'min_samples_split': 5, 'min_samples_leaf': 2},
+    {'max_depth': 10, 'min_samples_split': 10, 'min_samples_leaf': 2},
+    {'max_depth': 10, 'min_samples_split': 2, 'min_samples_leaf': 5},
+    {'max_depth': 15, 'min_samples_split': 5, 'min_samples_leaf': 3},
+    {'max_depth': 20, 'min_samples_split': 10, 'min_samples_leaf': 5},
+    {'max_depth': 8, 'min_samples_split': 15, 'min_samples_leaf': 4},
+    {'max_depth': 12, 'min_samples_split': 8, 'min_samples_leaf': 2},
+]
+```
+και τρέχω μια for loop:
+```{python}
+# Για τα αποτελέσματά μου
+fine_tuning_results = []
+
+# for loop για τους 15 συνδυασμούς
+for i, parameters in enumerate(parameter_combinations, 1):
+    # train
+    model = DecisionTreeRegressor(random_state=0, **parameters)
+    model.fit(X_train, y_train)
+    
+    # predict
+    y_train_pred = model.predict(X_train)
+    y_val_pred = model.predict(X_val)
+    
+    # υπολογισμός MAE
+    mae_train = mean_absolute_error(y_train, y_train_pred)
+    mae_validation = mean_absolute_error(y_val, y_val_pred)
+    
+    # Store results
+    fine_tuning_results.append({
+        'combination': i,
+        **parameters,
+        'mae_train': mae_train,
+        'mae_val': mae_validation
+    })
+```
+
+Θα αποθηκεύσω τα αποτελέσματα σε dataframe:
+
+```{python}
+# Create DataFrame with results
+results_df = pd.DataFrame(fine_tuning_results)
+results_df
+```
+
+Εξετάζοντας τα αποτελέσματα, αυτό το οποίο γενικά θέλω:
+- Αφενός να μην έχω χαμηλό MAE στο training set και υψηλό στο validation set,γιατί δείχνει υπερπροσαρμογή (overfitting)
+- Χαμηλό MAE στο validation set, που ακατδεικνύει καλή γενίκευση του μοντέλου.
+
+Βάση των αποτελεσμάτων παρατηρώ πως:
+
+- `max_depth`: Δένδρα μικρού βάθους (3-5) οδηγούν σε υποπροσαρμογή (underfitting), άρα το μοντέλο δεν μπορεί να μειώσει το σφάλμα εκπαίδευσης. Μεγάλα βάθη (10–15) οδηγούν σε υπερπροσαρμογή.
+
+- `min_samples_split`: Ορίζοντας μεγαλύτερη τιμή ως προαπαιτούμενο για να γίνει διαχωρισμός σε έναν κόμβο (αλλιώς σταματάει ο διαχωρισμός και θεωρείται τελικός κόμβος) μειώνεται η υπερπροσαρμογή. Αντίθετα, όταν συνεχίζω τους διαχωρισμούς (μικρότερο όριο), έχω κάποια υπερπροσαρμογή.
+
+- `min_samples_leaf`: Εάν ορίζω μεγάλο αριθμό απαιτούμενων δειγμάτων μετά τη διάσπαση σε κάθε κλάδο, έχω καλύτερη προσαρμογή, ενω μικρότερη τιμή δημιουργεί φύλλα που βασίζονται σε πολύ λίγα σημεία δεδομένων και έχω κάποια υπερπροσαρμογή.
+
+### Ερώτημα 8
+
+*Ποιό από τα δύο σύνολα δεδομένα (training ή validation set) είναι περισσότερο αξιόπιστο για την επιλογή υπερπαραμέτρων; Αιτιολογείστε.*
+
+Το σύνολο δεδομένων training χρησιμοποιείται για την εκπαίδευση του μοντέλου. Εάν επέλεγα υπερπαραμέτρους βάση αυτού, θα είχα τον κίνδυνο υπερπροσαρμογής του μοντέλους, δηλαδή να μην μπορεί να κάνει καλή γενίκευση σε άγνωστα δεδομένα.
+
+Το δείγμα δεδομένων validation χρησιμοποιείται για να αξιολογήσει την προσαρμογή του μοντέλου στο σύνολο δεδομένων εκπαίδευσης. Το μοντέλο
+βλέπει περιστασιακά αυτά τα δεδομένα, και άρα για αυτον τον λόγο - βάση των αποτελεσμάτων και της εκάστοτε loss function που χρησιμοποιούμε ως κριτήριο- ενημερώνουμε τις υπερπαραμέτρους του μοντέλου.
+
+### Ερώτημα 9
+
+*Θα δοκιμάσουμε τη μέθοδο cross-validation για την επιλογή παραμέτρων Χρησιμοποιήστε το σύνολο δεδομένων train-test του ερωτήματος 4. Αυτή τη φορά όμως, κάντε fine-tuning με τη βοήθεια cross-validation στο σύνολο train. Για διευκόλυνση, μπορείτε να χρησιμοποιήσετε τη συνάρτηση GridSearchCV της sklearn. Πιο συγκεκριμένα, αντί να υπάρχει σταθερό validation set, η sklearn θα χωρίσει το train set K φορές σε K διαφορετικά σύνολα train-validation και θα υπολογίσει το μέσο σφάλμα. Χρησιμοποιήστε τη μετρική MAE ως scoring, random_state=0 και ορίστε cv=10 ώστε να δημιουργηθούν K=10 folds. Μπορείτε να παραλληλοποιήσετε τη διαδικασία ορίζοντας n_jobs=-1, ώστε να χρησιμοποιήσετε όλους τους πυρήνες του επεξεργαστή.*
+
+Θα χρησιμοποιήσω κι εδώ τα X και y που έχω ήδη υπολογίσει παραπάνω:
+
+```{python}
+# κάνω split
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.10, random_state=0
+)
+
+# βάση του parameter_combinations
+parameters_grid = {
+    'max_depth': [3, 5, 8, 10, 15, 20],
+    'min_samples_split': [2, 5, 10, 15, 20],
+    'min_samples_leaf': [1, 2, 3, 4, 5]
+}
+
+model = DecisionTreeRegressor(random_state=0)
+```
+Από τη βιβλιογραφία, βλέπουμε πως η GridSearchCV χρειάζεται μια συνάρτηση score, που θα λειτουργεί ως βαθμολογία: όσο μεγαλύτερη, τόσο καλύτερη η αξιολόγηση του μοντέλου, οπότε για τη ΜΑΕ θα θέσω `greater_is_better=False`, καθώς θέλω το σφάλμα να είναι μικρό. Η `make_scorer()` μας επιτρέπει να μετατρέψουμε οποιαδήποτε μετρική σε scorer συμβατό με το scikit-learn.
+
+```{python}
+mae_scorer = make_scorer(mean_absolute_error, greater_is_better=False)
+
+# παράμετροι του μοντέλου
+grid_search = GridSearchCV(
+    estimator=model,
+    param_grid=parameters_grid,
+    scoring=mae_scorer,
+    cv=10,
+    n_jobs=-1,
+    verbose=2,
+    return_train_score=True
+)
+
+# εκπαιδεύω
+grid_search.fit(X_train, y_train)
+
+# θα αποθηκεύσω τα αποτελέσματά μου σε dataframe
+cross_validation_df = pd.DataFrame(grid_search.cv_results_)
+cross_validation_df.head()
+
+```
+Και από τις μεθόδους της GridSearch μπορώ να δω τις καλύτερες παραμέτρους και ποιά πήρε το καλύτερο score:
+
+```{python}
+print("Οι καλύτεροι παράμετροι είναι:", grid_search.best_params_)
+
+print(f"Με το καλύτερο Μέσο Απόλυτο Σφάλμα στο training: {-grid_search.best_score_:.4f}")
+```
+
+### Ερώτημα 10
+
+*Χρησιμοποιήστε το καλύτερο μοντέλο του ερωτήματος 9 και υπολογίστε τη μετρική MAE στο test set.*
+
+Οπότε παίρνω αυτές τις παραμέτρους για να υπολογίσω τις προβλέψεις στο test set:
+
+```{python}
+best_model = grid_search.best_estimator_
+y_test_pred = best_model.predict(X_test)
+mae_test = mean_absolute_error(y_test, y_test_pred)
+
+print(f"Μέσο Απόλυτο Σφάλμα στο τεστ: {mae_test:.4f}")
+```
+
+Παρατηρούμε πως συμβαίνει το εξής παράδοξο: βάση των αποτελεσμάτων στο ερώτημα 7, επιλέγοντας α) χαμηλά όρια για την ποσότητα των δειγμάτων σε κάθε φύλλο και τα απαιτούμενα δείγματα μετά τη διάσπαση σε κάθε κλάδο και β) μεγάλο βάθος δένδρου, θα οδηγούμουν σε υπερπροσαρμογή, που όμως δεν έγινε στην περίπτωσή μας.
+
+*Ποια από τις μεθοδολογίες που ακολουθήθηκαν (6/7/9) είναι περισσότερο αξιόπιστη; Αιτιολογήστε.*
+
+Στο ερώτημα 6, αλλάζουμε το random seed για να αξιολογήσουμε την σταθερότητα του μοντέλου με διαφορετικό διαχωρισμό των δεδομένων, αλλά δεν αλλάζουμε τις υπερπαραμέτρους ούτε διερευνούμε την επίδρασή τους στη συμπεριφορά του μοντέλου.
+
+Στο ερώτημα 7, αλλάζουμε και διερευνούμε τις υπερπαραμέτρους, τις αξιολογούμε όμως μόνο σε ένα set δεδομένων, το validation set, οπότε κατά μια έννοια μπορεί να κάνουμε υπερπροσαρμογή σε αυτό.
+
+Στο ερώτημα 9 χρησιμοποιώ πολλαπλους και διαφορετικούς διαχωρισμούς ανάμεσα στο training και το validation, για να αντιμετωπίσω τον προαναφερθέντα κίνδυνο υπερπροσαρμογής. Οι τελικές παράμετροι επιλέγονται βάση των μέσων όρων των σφαλμάτων για τους προαναφερθέντες διαχωρισμούς, άρα είναι πιο αξιόπιστες.
+
+### Ερώτημα 11
+
+*Επαναλάβετε την ερώτηση 9, χρησιμοποιώντας πάντα σταθερό max_depth=5. Εμφανίστε το καλύτερο δέντρο (με τη χρήση της plot tree). Επιπλέον, να αναφέρετε τους κανόνες που δημιουργήθηκαν (πχ το κρασί έχει υψηλό σκορ αν περιέχει πολύ ζάχαρη, είναι κόκκινο, κλπ..). Τέλος, να εμφανίσετε ραβδόγραμμα με τη σημαντικότητα κάθε χαρακτηριστικού, ταξινομώντας τα με βάση τη σημαντικότητα τους.*
+
+```{python}
+feature_names = df_raw.drop(columns=['quality', 'sweetness']).columns.tolist()
+
+# Split into train (90%) and test (10%)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.10, random_state=0
+)
+
+# Define parameter grid with fixed max_depth=5
+param_grid = {
+    'max_depth': [5],
+    'min_samples_split': [2, 5, 10, 15, 20],
+    'min_samples_leaf': [1, 2, 3, 4, 5],
+    'min_impurity_decrease': [0.0, 0.001, 0.01]
+}
+
+# Create the regressor model
+model = DecisionTreeRegressor(random_state=0)
+
+# Create MAE scorer
+mae_scorer = make_scorer(mean_absolute_error, greater_is_better=False)
+
+# Perform GridSearchCV
+grid_search = GridSearchCV(
+    estimator=model,
+    param_grid=param_grid,
+    scoring=mae_scorer,
+    cv=10,
+    n_jobs=-1,
+    verbose=2,
+    return_train_score=True
+)
+
+# Fit the grid search
+print("Starting GridSearchCV...")
+grid_search.fit(X_train, y_train)
+
+# Get best model
+best_model = grid_search.best_estimator_
+
+# Display best parameters
+print("\n" + "="*80)
+print("Best parameters found:")
+print(grid_search.best_params_)
+print(f"\nBest cross-validation MAE: {-grid_search.best_score_:.4f}")
+
+# Evaluate on test set
+y_test_pred = best_model.predict(X_test)
+mae_test = mean_absolute_error(y_test, y_test_pred)
+print(f"Test set MAE: {mae_test:.4f}")
+
+# 1. PLOT THE TREE
+plt.figure(figsize=(20, 10))
+plot_tree(
+    best_model,
+    feature_names=feature_names,
+    filled=True,
+    rounded=True,
+    fontsize=10
+)
+plt.title("Best Decision Tree (max_depth=5)", fontsize=16)
+plt.tight_layout()
+plt.show()
+
+# 2. EXTRACT AND DISPLAY RULES
+def get_tree_rules(tree, feature_names):
+    tree_ = tree.tree_
+    feature_name = [
+        feature_names[i] if i != -2 else "undefined!"
+        for i in tree_.feature
+    ]
+    
+    paths = []
+    
+    def recurse(node, path):
+        if tree_.feature[node] != -2:
+            name = feature_name[node]
+            threshold = tree_.threshold[node]
+            
+            # Left branch (<=)
+            left_path = path + [f"{name} <= {threshold:.3f}"]
+            recurse(tree_.children_left[node], left_path)
+            
+            # Right branch (>)
+            right_path = path + [f"{name} > {threshold:.3f}"]
+            recurse(tree_.children_right[node], right_path)
+        else:
+            # Leaf node
+            prediction = tree_.value[node][0][0]
+            paths.append({
+                'rules': ' AND '.join(path),
+                'prediction': prediction,
+                'samples': tree_.n_node_samples[node]
+            })
+    
+    recurse(0, [])
+    return paths
+
+rules = get_tree_rules(best_model, feature_names)
+rules_df = pd.DataFrame(rules).sort_values('prediction', ascending=False)
+
+print("\n" + "="*80)
+print("TOP 10 RULES FOR HIGH QUALITY WINE:")
+print("="*80)
+for idx, row in rules_df.head(10).iterrows():
+    print(f"\nPredicted Quality: {row['prediction']:.2f} (based on {row['samples']} samples)")
+    print(f"Rules: {row['rules']}")
+
+print("\n" + "="*80)
+print("TOP 10 RULES FOR LOW QUALITY WINE:")
+print("="*80)
+for idx, row in rules_df.tail(10).iterrows():
+    print(f"\nPredicted Quality: {row['prediction']:.2f} (based on {row['samples']} samples)")
+    print(f"Rules: {row['rules']}")
+
+# 3. FEATURE IMPORTANCE BAR CHART
+feature_importance = pd.DataFrame({
+    'feature': feature_names,
+    'importance': best_model.feature_importances_
+}).sort_values('importance', ascending=False)
+
+print("\n" + "="*80)
+print("FEATURE IMPORTANCES:")
+print(feature_importance.to_string(index=False))
+
+# Plot with Plotly
+fig = px.bar(
+    feature_importance,
+    x='importance',
+    y='feature',
+    orientation='h',
+    title='Feature Importance in Decision Tree (max_depth=5)',
+    labels={'importance': 'Importance', 'feature': 'Feature'}
+)
+
+fig.update_layout(
+    yaxis={'categoryorder': 'total ascending'},
+    autosize=False,
+    width=700,
+    height=500
+)
+
+fig.show()
+
+# Summary insights
+print("\n" + "="*80)
+print("KEY INSIGHTS FROM THE TREE:")
+print("="*80)
+top_features = feature_importance.head(3)
+print(f"\nThe 3 most important features are:")
+for idx, row in top_features.iterrows():
+    print(f"  - {row['feature']}: {row['importance']:.4f}")
+```
+
+Alcohol’s strong correlation with quality means that splitting on alcohol reduces the variance in the target (quality) more than other features.
+Alcohol affects the body, sweetness perception, and aroma of the wine.
+Volatile acidity (0.1952):
+
+Also makes sense: higher volatile acidity is usually associated with lower quality. It’s an important factor, but less dominant than alcohol.
+
+Sulphates (0.0612):
+
+Smaller effect, but still useful. Sulphates can influence preservation and taste, affecting quality.
