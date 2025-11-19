@@ -92,8 +92,10 @@ print(quality_value_counts)
 
 Από το documentation της μεθόδου `value_counts` βλέπω πως έχω την επιλογή να θέσω την παράμετρο `normalize=True`, για να πάρω τις σχετικές συχνότητες των τιμών της quality για τα δύο types (red και white).
 
-Οπότε, γιαα να απαντήσω στην ερώτηση, θα κάνω τα εξής:
+Οπότε, για να απαντήσω στην ερώτηση, θα κάνω τα εξής:
+
 - Group by κατά type και υπολογισμός του value counts για την στήλη quality
+
 - Γράφημα συχνότητας για τις τιμές της στήλης quality, διαχωρισμένες με βάση τις δύο τιμές της στήλης 'type', δηλαδή 'red' και 'white'.
 
 ```{python}
@@ -337,7 +339,6 @@ for i, parameters in enumerate(parameter_combinations, 1):
     mae_train = mean_absolute_error(y_train, y_train_pred)
     mae_validation = mean_absolute_error(y_val, y_val_pred)
     
-    # Store results
     fine_tuning_results.append({
         'combination': i,
         **parameters,
@@ -349,18 +350,19 @@ for i, parameters in enumerate(parameter_combinations, 1):
 Θα αποθηκεύσω τα αποτελέσματα σε dataframe:
 
 ```{python}
-# Create DataFrame with results
 results_df = pd.DataFrame(fine_tuning_results)
 results_df
 ```
 
 Εξετάζοντας τα αποτελέσματα, αυτό το οποίο γενικά θέλω:
+
 - Αφενός να μην έχω χαμηλό MAE στο training set και υψηλό στο validation set,γιατί δείχνει υπερπροσαρμογή (overfitting)
+
 - Χαμηλό MAE στο validation set, που ακατδεικνύει καλή γενίκευση του μοντέλου.
 
 Βάση των αποτελεσμάτων παρατηρώ πως:
 
-- `max_depth`: Δένδρα μικρού βάθους (3-5) οδηγούν σε υποπροσαρμογή (underfitting), άρα το μοντέλο δεν μπορεί να μειώσει το σφάλμα εκπαίδευσης. Μεγάλα βάθη (10–15) οδηγούν σε υπερπροσαρμογή.
+- `max_depth`: Δένδρα μικρού βάθους (από 3 έως 5) οδηγούν σε υποπροσαρμογή (underfitting), άρα το μοντέλο δεν μπορεί να μειώσει το σφάλμα εκπαίδευσης. Μεγάλα βάθη (από 10 έως 15) οδηγούν σε υπερπροσαρμογή.
 
 - `min_samples_split`: Ορίζοντας μεγαλύτερη τιμή ως προαπαιτούμενο για να γίνει διαχωρισμός σε έναν κόμβο (αλλιώς σταματάει ο διαχωρισμός και θεωρείται τελικός κόμβος) μειώνεται η υπερπροσαρμογή. Αντίθετα, όταν συνεχίζω τους διαχωρισμούς (μικρότερο όριο), έχω κάποια υπερπροσαρμογή.
 
@@ -456,32 +458,32 @@ print(f"Μέσο Απόλυτο Σφάλμα στο τεστ: {mae_test:.4f}")
 
 *Επαναλάβετε την ερώτηση 9, χρησιμοποιώντας πάντα σταθερό max_depth=5. Εμφανίστε το καλύτερο δέντρο (με τη χρήση της plot tree). Επιπλέον, να αναφέρετε τους κανόνες που δημιουργήθηκαν (πχ το κρασί έχει υψηλό σκορ αν περιέχει πολύ ζάχαρη, είναι κόκκινο, κλπ..). Τέλος, να εμφανίσετε ραβδόγραμμα με τη σημαντικότητα κάθε χαρακτηριστικού, ταξινομώντας τα με βάση τη σημαντικότητα τους.*
 
-```{python}
-feature_names = df_raw.drop(columns=['quality', 'sweetness']).columns.tolist()
+Εφόσον σε αυτές τις επαναλήψεις κρατάω σταθερό το βάθος του του δένδρου, θα πειραματιστώ αλλάζοντας το κριτήριο διαχωρισμού.
 
-# Split into train (90%) and test (10%)
+```{python}
+# κάνω split
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.10, random_state=0
 )
 
-# Define parameter grid with fixed max_depth=5
-param_grid = {
-    'max_depth': [5],
+# τα νέα κριτήρια
+parameters_grid = {
     'min_samples_split': [2, 5, 10, 15, 20],
     'min_samples_leaf': [1, 2, 3, 4, 5],
-    'min_impurity_decrease': [0.0, 0.001, 0.01]
+    'criterion': ['squared_error', 'friedman_mse', 'poisson']
 }
 
-# Create the regressor model
-model = DecisionTreeRegressor(random_state=0)
+model = DecisionTreeRegressor(random_state=0, max_depth=5)
+```
 
-# Create MAE scorer
+Ορίζω τώρα και τη συνάρτηση score, όμοια με προηγουμένως:
+```{python}
 mae_scorer = make_scorer(mean_absolute_error, greater_is_better=False)
 
-# Perform GridSearchCV
+# παράμετροι του μοντέλου
 grid_search = GridSearchCV(
     estimator=model,
-    param_grid=param_grid,
+    param_grid=parameters_grid,
     scoring=mae_scorer,
     cv=10,
     n_jobs=-1,
@@ -489,133 +491,75 @@ grid_search = GridSearchCV(
     return_train_score=True
 )
 
-# Fit the grid search
-print("Starting GridSearchCV...")
+# εκπαιδεύω
 grid_search.fit(X_train, y_train)
-
-# Get best model
+```
+Αποτελέσματα:
+```{python}
 best_model = grid_search.best_estimator_
 
-# Display best parameters
-print("\n" + "="*80)
-print("Best parameters found:")
-print(grid_search.best_params_)
-print(f"\nBest cross-validation MAE: {-grid_search.best_score_:.4f}")
+print("Οι καλύτεροι παράμετροι είναι:", grid_search.best_params_)
 
-# Evaluate on test set
+print(f"Με το καλύτερο Μέσο Απόλυτο Σφάλμα στο training: {-grid_search.best_score_:.4f}")
+
+# οι προβλεπόμενες τιμές
 y_test_pred = best_model.predict(X_test)
 mae_test = mean_absolute_error(y_test, y_test_pred)
 print(f"Test set MAE: {mae_test:.4f}")
+```
+Επομένως κι εδώ έχουμε χαμηλότερο μέσο απόλυτο σφάλμα στο test σε σχέση με τα δεδομένα εκπαίδευσης. Και τέλος ας απεικονίσω το δένδρο:
 
-# 1. PLOT THE TREE
+```{python}
+column_names = df_raw.drop(columns=['quality', 'sweetness']).columns.tolist()
+
 plt.figure(figsize=(20, 10))
 plot_tree(
     best_model,
-    feature_names=feature_names,
+    max_depth=5,
+    feature_names=column_names,
     filled=True,
     rounded=True,
     fontsize=10
 )
-plt.title("Best Decision Tree (max_depth=5)", fontsize=16)
+plt.title("Optimal Tree", fontsize=14)
 plt.tight_layout()
 plt.show()
+```
+Διαβάζοντας το δέντρο, μπορούμε να δούμε έως και το 4ο επίπεδο (που είναι ευκρινές) ποιά split οδηγούν σε υψηλότερη ποιότητα. Συνοπτικά έχουμε:
 
-# 2. EXTRACT AND DISPLAY RULES
-def get_tree_rules(tree, feature_names):
-    tree_ = tree.tree_
-    feature_name = [
-        feature_names[i] if i != -2 else "undefined!"
-        for i in tree_.feature
-    ]
-    
-    paths = []
-    
-    def recurse(node, path):
-        if tree_.feature[node] != -2:
-            name = feature_name[node]
-            threshold = tree_.threshold[node]
-            
-            # Left branch (<=)
-            left_path = path + [f"{name} <= {threshold:.3f}"]
-            recurse(tree_.children_left[node], left_path)
-            
-            # Right branch (>)
-            right_path = path + [f"{name} > {threshold:.3f}"]
-            recurse(tree_.children_right[node], right_path)
-        else:
-            # Leaf node
-            prediction = tree_.value[node][0][0]
-            paths.append({
-                'rules': ' AND '.join(path),
-                'prediction': prediction,
-                'samples': tree_.n_node_samples[node]
-            })
-    
-    recurse(0, [])
-    return paths
+- Στο φύλλο με ποιότητα 6.659 οδηγηθήκαμε επιλέγοντας υψηλό βαθμό αλκοόλ > 10.625, διοξείδιο του θείου < 21.5 και σάκχαρα < 1.725
 
-rules = get_tree_rules(best_model, feature_names)
-rules_df = pd.DataFrame(rules).sort_values('prediction', ascending=False)
+- Στην αμέσως επόμενη ποιότητα, αλκοόλ και πάλι > 10.625, ελεύθερο διοξείδιο του θείου ≤ 21.5 αλλά αυτή τη φορά θειικά άλατα < 0.685
 
-print("\n" + "="*80)
-print("TOP 10 RULES FOR HIGH QUALITY WINE:")
-print("="*80)
-for idx, row in rules_df.head(10).iterrows():
-    print(f"\nPredicted Quality: {row['prediction']:.2f} (based on {row['samples']} samples)")
-    print(f"Rules: {row['rules']}")
+- Στη χαμηλότερη ποιότητα φτάνω με πτητική οξύτητα < 0.303 και αλκοολικούς βαθμούς < 9.85.
 
-print("\n" + "="*80)
-print("TOP 10 RULES FOR LOW QUALITY WINE:")
-print("="*80)
-for idx, row in rules_df.tail(10).iterrows():
-    print(f"\nPredicted Quality: {row['prediction']:.2f} (based on {row['samples']} samples)")
-    print(f"Rules: {row['rules']}")
+Για να δω τη σημασία κάθε χαρακτηριστικού, υπάρχει η μέθοδος `feature_importances_` για `DecisionTreeRegressor`. Παίρνω και τα ονόματα των στηλών από το αρχικό df, επομένως:
+```{python}
+column_names = df_raw.drop(columns=['quality', 'sweetness']).columns.tolist()
+importance_values = best_model.feature_importances_.tolist()
 
-# 3. FEATURE IMPORTANCE BAR CHART
-feature_importance = pd.DataFrame({
-    'feature': feature_names,
-    'importance': best_model.feature_importances_
-}).sort_values('importance', ascending=False)
+df_feature_importance = pd.DataFrame({'Feature': column_names, 'Importance': importance_values})
 
-print("\n" + "="*80)
-print("FEATURE IMPORTANCES:")
-print(feature_importance.to_string(index=False))
+print(df_feature_importance)
+```
 
-# Plot with Plotly
+Το ραβδόγραμμα με τη σημαντικότητα κάθε χαρακτηριστικού, ταξινομώντας τα με βάση τη σημαντικότητα τους είναι:
+
+```{python}
 fig = px.bar(
-    feature_importance,
-    x='importance',
-    y='feature',
+    df_feature_importance,
+    x='Importance',
+    y='Feature',
     orientation='h',
-    title='Feature Importance in Decision Tree (max_depth=5)',
-    labels={'importance': 'Importance', 'feature': 'Feature'}
+    color_discrete_sequence=[color_palette[0]],
+    title='Σημαντικότητα χαρακτηριστικών',
+    labels={'Importance': 'Importance', 'Feature': 'Feature'}
 )
 
 fig.update_layout(
     yaxis={'categoryorder': 'total ascending'},
-    autosize=False,
-    width=700,
-    height=500
 )
 
 fig.show()
-
-# Summary insights
-print("\n" + "="*80)
-print("KEY INSIGHTS FROM THE TREE:")
-print("="*80)
-top_features = feature_importance.head(3)
-print(f"\nThe 3 most important features are:")
-for idx, row in top_features.iterrows():
-    print(f"  - {row['feature']}: {row['importance']:.4f}")
 ```
-
-Alcohol’s strong correlation with quality means that splitting on alcohol reduces the variance in the target (quality) more than other features.
-Alcohol affects the body, sweetness perception, and aroma of the wine.
-Volatile acidity (0.1952):
-
-Also makes sense: higher volatile acidity is usually associated with lower quality. It’s an important factor, but less dominant than alcohol.
-
-Sulphates (0.0612):
-
-Smaller effect, but still useful. Sulphates can influence preservation and taste, affecting quality.
+Από το ραβδόγραμμα επιβεβαιώνεται η βαρύτητα των αλκοολικών βαθμών (0.56), που είδαμε και ως κύριο διαχωριστικό στην ποιότητα των κρασιών, ακολουθούμενο από την πτητική οξύτητα (0.19) και τις θειϊκές ενώσεις (0.08).
