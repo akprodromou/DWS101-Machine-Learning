@@ -6,8 +6,9 @@ format:
     ipynb: default
 execute:
     echo: true
-jupyter: python3
+    kernel: python3
 ---
+
 
 ### Μεταφόρτωση Βιβλιοθηκών
 
