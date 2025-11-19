@@ -3,10 +3,7 @@ title: "DWS 101 - Exercise 4 - Part A"
 format:
     html:
         code-fold: false
-    ipynb: default
-execute:
-    echo: true
-    kernel: python3
+jupyter: python3
 ---
 
 ### Μεταφόρτωση Βιβλιοθηκών
