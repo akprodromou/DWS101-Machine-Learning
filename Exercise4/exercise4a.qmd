@@ -4,9 +4,9 @@ format:
     html:
         code-fold: false
     ipynb: default
+jupyter: python3
 execute:
     echo: true
-jupyter: python3
 ---
 
 ### Μεταφόρτωση Βιβλιοθηκών
