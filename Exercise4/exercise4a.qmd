@@ -4,10 +4,14 @@ format:
     html:
         code-fold: false
     ipynb: default
+
 execute:
     echo: true
     kernel: dws101-env
     python: 'venv/bin/python'
+
+plotly:
+    include: true
 ---
 
 ### Μεταφόρτωση Βιβλιοθηκών
