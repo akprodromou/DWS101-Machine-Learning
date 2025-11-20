@@ -3,7 +3,11 @@ title: "DWS 101 - Exercise 4 - Part A"
 format:
     html:
         code-fold: false
-jupyter: python3
+    ipynb: default
+execute:
+    echo: true
+    kernel: dws101-env
+    python: 'venv/bin/python'
 ---
 
 ### Μεταφόρτωση Βιβλιοθηκών
